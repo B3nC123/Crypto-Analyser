@@ -3,7 +3,7 @@ from binance.exceptions import BinanceAPIException
 import pandas as pd
 from datetime import datetime, timedelta
 import logging
-from ..config import BINANCE_API_KEY, BINANCE_API_SECRET, CRYPTO_SYMBOLS
+from src.config import BINANCE_API_KEY, BINANCE_API_SECRET, CRYPTO_SYMBOLS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

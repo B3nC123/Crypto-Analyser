@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import ta
 import logging
-from ..config import TECHNICAL_INDICATORS, TECHNICAL_TIMEFRAMES
+from src.config import TECHNICAL_INDICATORS, TECHNICAL_TIMEFRAMES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

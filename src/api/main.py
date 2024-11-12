@@ -4,10 +4,10 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from ..data_collection.market_data import MarketDataCollector
-from ..sentiment_analysis.analyzer import SentimentAnalyzer
-from ..technical_analysis.indicators import TechnicalAnalyzer
-from ..config import CRYPTO_SYMBOLS, TECHNICAL_TIMEFRAMES
+from src.data_collection.market_data import MarketDataCollector
+from src.sentiment_analysis.analyzer import SentimentAnalyzer
+from src.technical_analysis.indicators import TechnicalAnalyzer
+from src.config import CRYPTO_SYMBOLS, TECHNICAL_TIMEFRAMES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

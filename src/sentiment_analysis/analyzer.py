@@ -1,9 +1,9 @@
-from vaderSentiment.vaderSentiment import SentimentIntensifier, SentimentAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import praw
 import feedparser
 import logging
 from datetime import datetime, timedelta
-from ..config import (
+from src.config import (
     REDDIT_CLIENT_ID,
     REDDIT_CLIENT_SECRET,
     REDDIT_USER_AGENT,
@@ -16,12 +16,18 @@ logger = logging.getLogger(__name__)
 
 class SentimentAnalyzer:
     def __init__(self):
-        self.analyzer = SentimentAnalyzer()
-        self.reddit = praw.Reddit(
-            client_id=REDDIT_CLIENT_ID,
-            client_secret=REDDIT_CLIENT_SECRET,
-            user_agent=REDDIT_USER_AGENT
-        )
+        self.analyzer = SentimentIntensityAnalyzer()
+        try:
+            self.reddit = praw.Reddit(
+                client_id=REDDIT_CLIENT_ID,
+                client_secret=REDDIT_CLIENT_SECRET,
+                user_agent=REDDIT_USER_AGENT
+            )
+            self.reddit_available = True
+        except Exception as e:
+            logger.warning(f"Failed to initialize Reddit client: {e}")
+            self.reddit_available = False
+
         # Custom crypto-specific lexicon additions
         self.crypto_lexicon = {
             'hodl': 2.0,
@@ -62,6 +68,10 @@ class SentimentAnalyzer:
 
     def get_reddit_sentiment(self, subreddit_name, symbol, limit=100):
         """Get sentiment from Reddit posts and comments."""
+        if not self.reddit_available:
+            logger.info(f"Reddit API not available, skipping Reddit sentiment for {symbol}")
+            return []
+
         try:
             subreddit = self.reddit.subreddit(subreddit_name)
             posts = []
@@ -88,22 +98,26 @@ class SentimentAnalyzer:
         try:
             news_items = []
             for feed_url in rss_feeds:
-                feed = feedparser.parse(feed_url)
-                for entry in feed.entries:
-                    # Check if entry is within sentiment window
-                    if 'published_parsed' in entry:
-                        pub_date = datetime(*entry.published_parsed[:6])
-                        if pub_date < datetime.now() - timedelta(hours=SENTIMENT_WINDOW):
-                            continue
-                    
-                    sentiment = self.analyze_text(entry.title + " " + entry.summary)
-                    if sentiment:
-                        news_items.append({
-                            'timestamp': pub_date if 'published_parsed' in entry else datetime.now(),
-                            'title': entry.title,
-                            'sentiment': sentiment['compound'],
-                            'source': feed.feed.title
-                        })
+                try:
+                    feed = feedparser.parse(feed_url)
+                    for entry in feed.entries:
+                        # Check if entry is within sentiment window
+                        if 'published_parsed' in entry:
+                            pub_date = datetime(*entry.published_parsed[:6])
+                            if pub_date < datetime.now() - timedelta(hours=SENTIMENT_WINDOW):
+                                continue
+                        
+                        sentiment = self.analyze_text(entry.title + " " + entry.summary)
+                        if sentiment:
+                            news_items.append({
+                                'timestamp': pub_date if 'published_parsed' in entry else datetime.now(),
+                                'title': entry.title,
+                                'sentiment': sentiment['compound'],
+                                'source': feed.feed.title
+                            })
+                except Exception as e:
+                    logger.error(f"Error processing feed {feed_url}: {e}")
+                    continue
             
             return news_items
         except Exception as e:
@@ -115,8 +129,9 @@ class SentimentAnalyzer:
         try:
             # Get Reddit sentiment from relevant subreddits
             reddit_data = []
-            for subreddit in ['cryptocurrency', f'{symbol.lower()}', 'cryptomarkets']:
-                reddit_data.extend(self.get_reddit_sentiment(subreddit, symbol))
+            if self.reddit_available:
+                for subreddit in ['cryptocurrency', f'{symbol.lower()}', 'cryptomarkets']:
+                    reddit_data.extend(self.get_reddit_sentiment(subreddit, symbol))
 
             # Get news sentiment
             crypto_news_feeds = [
@@ -151,9 +166,18 @@ class SentimentAnalyzer:
                 'sentiment_score': final_sentiment,
                 'reddit_posts_analyzed': len(reddit_data),
                 'news_items_analyzed': len(news_data),
+                'reddit_available': self.reddit_available,
                 'timestamp': datetime.now()
             }
 
         except Exception as e:
             logger.error(f"Error aggregating sentiment for {symbol}: {e}")
-            return None
+            return {
+                'symbol': symbol,
+                'sentiment_score': 0,
+                'reddit_posts_analyzed': 0,
+                'news_items_analyzed': 0,
+                'reddit_available': self.reddit_available,
+                'timestamp': datetime.now(),
+                'error': str(e)
+            }

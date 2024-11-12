@@ -4,41 +4,47 @@ A sophisticated cryptocurrency trading assistant that combines technical analysi
 
 ## Features
 
-- Real-time cryptocurrency price tracking
-- Sentiment analysis from multiple sources:
-  - Reddit discussions
-  - News articles
+- Real-time cryptocurrency price tracking via Binance API
+- Multi-source sentiment analysis:
+  - Reddit discussions (requires API credentials)
+  - News articles from major crypto news outlets
   - Social media trends
-- Technical analysis including:
+- Comprehensive technical analysis:
   - RSI (Relative Strength Index)
   - MACD (Moving Average Convergence Divergence)
   - Bollinger Bands
   - EMA (Exponential Moving Average)
-- Interactive dashboard with:
-  - Real-time price charts
-  - Sentiment indicators
+- Interactive dashboard featuring:
+  - Real-time price charts with volume data
+  - Sentiment indicators and trends
   - Technical analysis visualization
-  - Trading signals
-- RESTful API for data access
+  - Combined trading signals
+- RESTful API for data access and integration
 
 ## Prerequisites
 
 - Python 3.8+
-- pip (Python package manager)
-- Virtual environment (recommended)
+- Git
+- Binance API credentials (for market data)
+- Reddit API credentials (for sentiment analysis)
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/crypto-sentiment-trader.git
-cd crypto-sentiment-trader
+git clone https://github.com/B3nC123/Crypto-Analyser.git
+cd Crypto-Analyser
 ```
 
 2. Create and activate a virtual environment:
 ```bash
+# Windows
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+venv\Scripts\activate
+
+# Linux/Mac
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 3. Install required packages:
@@ -46,34 +52,59 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Create a .env file in the root directory with your API keys:
+4. Create a .env file in the root directory:
+```bash
+# Windows
+copy .env.example .env
+
+# Linux/Mac
+cp .env.example .env
+```
+
+5. Update the .env file with your API credentials:
 ```env
+# Binance API Configuration
 BINANCE_API_KEY=your_binance_api_key
 BINANCE_API_SECRET=your_binance_api_secret
+
+# Reddit API Configuration
 REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_client_secret
 REDDIT_USER_AGENT=crypto_sentiment_bot 1.0
+
+# Application Settings
+DEBUG=False
+LOG_LEVEL=INFO
 ```
 
 ## Usage
 
 1. Start the application:
 ```bash
-python src/main.py
+python -m src.main
 ```
 
-This will start both the FastAPI backend server and the Streamlit frontend.
+This command starts both:
+- FastAPI backend server on http://localhost:8080
+- Streamlit dashboard on http://localhost:8501
 
-- API will be available at: http://localhost:8000
-- Dashboard will be available at: http://localhost:8501
+2. Access the dashboard:
+- Open your web browser and navigate to http://localhost:8501
+- Select a cryptocurrency from the dropdown menu
+- Choose your preferred timeframe
+- View real-time price data, sentiment analysis, and trading signals
 
-2. Access the API documentation:
-- Navigate to http://localhost:8000/docs for interactive API documentation
+3. API Documentation:
+- Interactive API docs: http://localhost:8080/docs
+- OpenAPI specification: http://localhost:8080/openapi.json
 
 ## API Endpoints
 
+### Market Data
 - GET `/api/v1/market/prices` - Get current prices for all tracked symbols
 - GET `/api/v1/market/historical/{symbol}` - Get historical price data
+
+### Analysis
 - GET `/api/v1/analysis/sentiment/{symbol}` - Get sentiment analysis
 - GET `/api/v1/analysis/technical/{symbol}` - Get technical analysis
 - GET `/api/v1/trading/signals/{symbol}` - Get combined trading signals
@@ -83,39 +114,76 @@ This will start both the FastAPI backend server and the Streamlit frontend.
 ```
 crypto-sentiment-trader/
 ├── src/
-│   ├── api/
-│   │   └── main.py
-│   ├── data_collection/
-│   │   └── market_data.py
-│   ├── sentiment_analysis/
-│   │   └── analyzer.py
-│   ├── technical_analysis/
-│   │   └── indicators.py
-│   ├── frontend/
-│   │   └── dashboard.py
-│   ├── config.py
-│   └── main.py
-├── requirements.txt
-└── README.md
+│   ├── api/                 # FastAPI backend
+│   ├── data_collection/     # Market data retrieval
+│   ├── sentiment_analysis/  # Sentiment processing
+│   ├── technical_analysis/  # Trading indicators
+│   ├── frontend/           # Streamlit dashboard
+│   ├── config.py          # Configuration settings
+│   └── main.py            # Application entry point
+├── requirements.txt       # Python dependencies
+├── .env.example          # Environment variables template
+└── README.md            # Project documentation
 ```
 
 ## Configuration
 
-You can modify the following settings in `src/config.py`:
-
-- `CRYPTO_SYMBOLS`: List of cryptocurrencies to track
-- `UPDATE_INTERVAL`: Data update frequency
+Edit `src/config.py` to modify:
+- `CRYPTO_SYMBOLS`: List of tracked cryptocurrencies
+- `UPDATE_INTERVAL`: Data refresh frequency
 - `SENTIMENT_WINDOW`: Time window for sentiment analysis
-- `TECHNICAL_TIMEFRAMES`: Available timeframes for technical analysis
-- `RISK_PERCENTAGE`: Maximum risk per trade
-- `POSITION_SIZE`: Position size as percentage of available balance
+- `TECHNICAL_TIMEFRAMES`: Available chart timeframes
+- `TECHNICAL_INDICATORS`: Enabled technical indicators
+
+## Development
+
+1. Install development dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Run tests:
+```bash
+python -m pytest tests/
+```
+
+3. Start the application in debug mode:
+```bash
+DEBUG=True python -m src.main
+```
+
+## Troubleshooting
+
+1. Reddit API 401 errors:
+- Verify your Reddit API credentials in .env
+- Ensure your Reddit application has the correct permissions
+- Check if your Reddit account is verified
+
+2. Binance API issues:
+- Confirm your API keys are valid
+- Check if you have the necessary API permissions
+- Verify your IP is not restricted
+
+3. Dashboard not loading:
+- Ensure both backend and frontend are running
+- Check if ports 8080 and 8501 are available
+- Look for errors in the application logs
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
+2. Create a feature branch:
+```bash
+git checkout -b feature/your-feature-name
+```
+3. Commit your changes:
+```bash
+git commit -am 'Add some feature'
+```
+4. Push to the branch:
+```bash
+git push origin feature/your-feature-name
+```
 5. Create a Pull Request
 
 ## License

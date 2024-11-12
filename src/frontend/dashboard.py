@@ -6,6 +6,14 @@ import requests
 import json
 from datetime import datetime, timedelta
 import time
+import sys
+import os
+from pathlib import Path
+
+# Add parent directory to Python path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from src.config import CRYPTO_SYMBOLS, TECHNICAL_TIMEFRAMES
 
 # Configure the page
 st.set_page_config(
@@ -15,7 +23,8 @@ st.set_page_config(
 )
 
 # Constants
-API_BASE_URL = "http://localhost:8000/api/v1"
+API_PORT = os.environ.get('API_PORT', '8080')  # Get port from environment or default to 8080
+API_BASE_URL = f"http://localhost:{API_PORT}/api/v1"
 REFRESH_INTERVAL = 300  # 5 minutes in seconds
 
 def fetch_data(endpoint):
@@ -67,11 +76,11 @@ def main():
     st.sidebar.title("Settings")
     selected_symbol = st.sidebar.selectbox(
         "Select Cryptocurrency",
-        ["BTC", "ETH", "BNB", "XRP", "ADA"]
+        CRYPTO_SYMBOLS
     )
     timeframe = st.sidebar.selectbox(
         "Select Timeframe",
-        ["1h", "4h", "1d"]
+        TECHNICAL_TIMEFRAMES
     )
 
     # Create columns for key metrics
@@ -83,10 +92,13 @@ def main():
         prices = fetch_data("market/prices")
         if prices:
             current_price = prices['prices'].get(f"{selected_symbol}USDT")
-            st.metric(
-                label=f"{selected_symbol}/USDT",
-                value=f"${current_price:,.2f}"
-            )
+            if current_price:
+                st.metric(
+                    label=f"{selected_symbol}/USDT",
+                    value=f"${current_price:,.2f}"
+                )
+            else:
+                st.error(f"No price data available for {selected_symbol}")
 
     # Sentiment Analysis
     with col2:
@@ -98,10 +110,15 @@ def main():
             st.markdown(f"""
             **Score:** <span style='color:{sentiment_color}'>{sentiment_score:.2f}</span>
             """, unsafe_allow_html=True)
-            st.markdown(f"""
-            **Posts Analyzed:** {sentiment['reddit_posts_analyzed']}  
-            **News Items:** {sentiment['news_items_analyzed']}
-            """)
+            
+            # Display data source information
+            st.markdown("### Data Sources")
+            if sentiment.get('reddit_available', False):
+                st.markdown(f"**Reddit Posts:** {sentiment['reddit_posts_analyzed']}")
+            else:
+                st.warning("⚠️ Reddit data unavailable")
+            
+            st.markdown(f"**News Items:** {sentiment['news_items_analyzed']}")
 
     # Trading Signals
     with col3:
@@ -122,15 +139,17 @@ def main():
     # Price Chart
     st.subheader("Price Chart")
     historical_data = fetch_data(f"market/historical/{selected_symbol}USDT?interval={timeframe}")
-    if historical_data:
+    if historical_data and historical_data.get('data'):
         df = pd.DataFrame(historical_data['data'])
         fig = create_candlestick_chart(df, f"{selected_symbol}/USDT")
         st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.error("No historical data available")
 
     # Technical Analysis
     st.subheader("Technical Analysis")
     technical = fetch_data(f"analysis/technical/{selected_symbol}USDT?interval={timeframe}")
-    if technical:
+    if technical and technical.get('signals'):
         col1, col2 = st.columns(2)
         
         with col1:
@@ -138,15 +157,27 @@ def main():
             indicators = technical['signals']
             for indicator, data in indicators.items():
                 if indicator != 'overall':
-                    st.markdown(f"**{indicator.upper()}:** {data['signal']}")
+                    signal_color = {
+                        'buy': 'green',
+                        'sell': 'red',
+                        'neutral': 'gray'
+                    }[data['signal']]
+                    st.markdown(f"**{indicator.upper()}:** <span style='color:{signal_color}'>{data['signal'].upper()}</span>", unsafe_allow_html=True)
         
         with col2:
             st.markdown("### Overall Analysis")
             overall = indicators['overall']
+            signal_color = {
+                'buy': 'green',
+                'sell': 'red',
+                'neutral': 'gray'
+            }[overall['signal']]
             st.markdown(f"""
-            **Signal:** {overall['signal']}  
+            **Signal:** <span style='color:{signal_color}'>{overall['signal'].upper()}</span>  
             **Strength:** {overall['strength']:.2%}
-            """)
+            """, unsafe_allow_html=True)
+    else:
+        st.error("No technical analysis data available")
 
     # Refresh button
     if st.button("Refresh Data"):
