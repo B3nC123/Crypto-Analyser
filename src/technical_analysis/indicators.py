@@ -12,11 +12,21 @@ class TechnicalAnalyzer:
         self.indicators = TECHNICAL_INDICATORS
         self.timeframes = TECHNICAL_TIMEFRAMES
 
+    def _series_to_dict(self, series):
+        """Convert pandas Series to dictionary, handling NaN values."""
+        if isinstance(series, pd.Series):
+            return {str(k): float(v) if not pd.isna(v) else 0.0 for k, v in series.items()}
+        return series
+
+    def _handle_missing_values(self, series):
+        """Handle missing values in a series using forward and backward fill."""
+        return series.ffill().bfill()
+
     def calculate_rsi(self, data, period=14):
         """Calculate Relative Strength Index."""
         try:
             rsi = ta.momentum.RSIIndicator(data['close'], window=period)
-            return rsi.rsi()
+            return rsi.rsi().fillna(50)  # Fill NaN with neutral RSI value
         except Exception as e:
             logger.error(f"Error calculating RSI: {e}")
             return None
@@ -31,9 +41,9 @@ class TechnicalAnalyzer:
                 window_sign=signal_period
             )
             return {
-                'macd': macd.macd(),
-                'signal': macd.macd_signal(),
-                'histogram': macd.macd_diff()
+                'macd': self._series_to_dict(macd.macd().fillna(0)),
+                'signal': self._series_to_dict(macd.macd_signal().fillna(0)),
+                'histogram': self._series_to_dict(macd.macd_diff().fillna(0))
             }
         except Exception as e:
             logger.error(f"Error calculating MACD: {e}")
@@ -48,9 +58,9 @@ class TechnicalAnalyzer:
                 window_dev=window_dev
             )
             return {
-                'upper': bollinger.bollinger_hband(),
-                'middle': bollinger.bollinger_mavg(),
-                'lower': bollinger.bollinger_lband()
+                'upper': self._series_to_dict(self._handle_missing_values(bollinger.bollinger_hband())),
+                'middle': self._series_to_dict(self._handle_missing_values(bollinger.bollinger_mavg())),
+                'lower': self._series_to_dict(self._handle_missing_values(bollinger.bollinger_lband()))
             }
         except Exception as e:
             logger.error(f"Error calculating Bollinger Bands: {e}")
@@ -62,7 +72,7 @@ class TechnicalAnalyzer:
             emas = {}
             for period in periods:
                 ema = ta.trend.EMAIndicator(data['close'], window=period)
-                emas[f'EMA_{period}'] = ema.ema_indicator()
+                emas[f'EMA_{period}'] = self._series_to_dict(self._handle_missing_values(ema.ema_indicator()))
             return emas
         except Exception as e:
             logger.error(f"Error calculating EMAs: {e}")
@@ -77,8 +87,8 @@ class TechnicalAnalyzer:
                 close=data['close']
             )
             return {
-                'support': pivot.psar(),
-                'resistance': pivot.psar_up_indicator()
+                'support': self._series_to_dict(self._handle_missing_values(pivot.psar())),
+                'resistance': self._series_to_dict(pivot.psar_up_indicator().fillna(0))
             }
         except Exception as e:
             logger.error(f"Error calculating support/resistance: {e}")
@@ -98,8 +108,8 @@ class TechnicalAnalyzer:
                 mask = (data['low'] >= price_level) & (data['low'] < price_level + bin_size)
                 volume = data.loc[mask, 'volume'].sum()
                 volume_profile.append({
-                    'price_level': price_level,
-                    'volume': volume
+                    'price_level': float(price_level),
+                    'volume': float(volume)
                 })
             
             return volume_profile
@@ -121,7 +131,7 @@ class TechnicalAnalyzer:
             # RSI Signals
             rsi = self.calculate_rsi(data)
             if rsi is not None:
-                latest_rsi = rsi.iloc[-1]
+                latest_rsi = float(rsi.iloc[-1])
                 signals['rsi'] = {
                     'value': latest_rsi,
                     'signal': 'buy' if latest_rsi < 30 else 'sell' if latest_rsi > 70 else 'neutral'
@@ -130,8 +140,8 @@ class TechnicalAnalyzer:
             # MACD Signals
             macd = self.calculate_macd(data)
             if macd is not None:
-                latest_macd = macd['macd'].iloc[-1]
-                latest_signal = macd['signal'].iloc[-1]
+                latest_macd = float(list(macd['macd'].values())[-1])
+                latest_signal = float(list(macd['signal'].values())[-1])
                 signals['macd'] = {
                     'value': latest_macd,
                     'signal': 'buy' if latest_macd > latest_signal else 'sell'
@@ -140,9 +150,9 @@ class TechnicalAnalyzer:
             # Bollinger Bands Signals
             bb = self.calculate_bollinger_bands(data)
             if bb is not None:
-                latest_price = data['close'].iloc[-1]
-                latest_lower = bb['lower'].iloc[-1]
-                latest_upper = bb['upper'].iloc[-1]
+                latest_price = float(data['close'].iloc[-1])
+                latest_lower = float(list(bb['lower'].values())[-1])
+                latest_upper = float(list(bb['upper'].values())[-1])
                 signals['bb'] = {
                     'value': {
                         'price': latest_price,
@@ -155,9 +165,9 @@ class TechnicalAnalyzer:
             # EMA Signals
             ema = self.calculate_ema(data)
             if ema is not None:
-                latest_price = data['close'].iloc[-1]
-                latest_ema_50 = ema['EMA_50'].iloc[-1]
-                latest_ema_200 = ema['EMA_200'].iloc[-1]
+                latest_price = float(data['close'].iloc[-1])
+                latest_ema_50 = float(list(ema['EMA_50'].values())[-1])
+                latest_ema_200 = float(list(ema['EMA_200'].values())[-1])
                 signals['ema'] = {
                     'value': {
                         'ema_50': latest_ema_50,
@@ -185,9 +195,12 @@ class TechnicalAnalyzer:
             else:
                 overall_signal = 'neutral'
 
+            total_signals = sum(signal_counts.values())
+            strength = float(max(signal_counts.values()) / total_signals) if total_signals > 0 else 0.0
+
             signals['overall'] = {
                 'signal': overall_signal,
-                'strength': max(signal_counts.values()) / sum(signal_counts.values())
+                'strength': strength
             }
 
             return signals
