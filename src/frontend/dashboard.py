@@ -1,193 +1,167 @@
 import streamlit as st
-import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import requests
-import json
 from datetime import datetime, timedelta
-import time
-import sys
-import os
-from pathlib import Path
+import pandas as pd
+import asyncio
+from ..data_collection.market_data import MarketDataCollector
+from ..technical_analysis.indicators import TechnicalAnalyzer
+from ..sentiment_analysis.analyzer import SentimentAnalyzer
+from ..config import CRYPTO_SYMBOLS, TECHNICAL_TIMEFRAMES
 
-# Add parent directory to Python path
-sys.path.append(str(Path(__file__).parent.parent.parent))
+class Dashboard:
+    def __init__(self):
+        self.market_data = MarketDataCollector()
+        self.technical_analyzer = TechnicalAnalyzer()
+        self.sentiment_analyzer = SentimentAnalyzer()
 
-from src.config import CRYPTO_SYMBOLS, TECHNICAL_TIMEFRAMES
+    def plot_price_chart(self, symbol, timeframe, data):
+        """Create an interactive price chart with indicators."""
+        fig = go.Figure()
 
-# Configure the page
-st.set_page_config(
-    page_title="Crypto Sentiment Trader",
-    page_icon="📈",
-    layout="wide"
-)
+        # Candlestick chart
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data['open'],
+            high=data['high'],
+            low=data['low'],
+            close=data['close'],
+            name='Price'
+        ))
 
-# Constants
-API_PORT = os.environ.get('API_PORT', '8080')  # Get port from environment or default to 8080
-API_BASE_URL = f"http://localhost:{API_PORT}/api/v1"
-REFRESH_INTERVAL = 300  # 5 minutes in seconds
+        # Add Bollinger Bands
+        bb = self.technical_analyzer.calculate_bollinger_bands(data)
+        if bb:
+            for band, color in [('upper', 'rgba(250, 0, 0, 0.2)'), 
+                              ('lower', 'rgba(0, 250, 0, 0.2)')]:
+                fig.add_trace(go.Scatter(
+                    x=data.index,
+                    y=pd.Series(bb[band]),
+                    name=f'BB {band}',
+                    line=dict(color=color),
+                    opacity=0.7
+                ))
 
-def fetch_data(endpoint):
-    """Fetch data from API endpoint."""
-    try:
-        response = requests.get(f"{API_BASE_URL}/{endpoint}")
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        st.error(f"Error fetching data from {endpoint}: {str(e)}")
-        return None
+        # Layout
+        fig.update_layout(
+            title=f'{symbol} Price Chart ({timeframe})',
+            yaxis_title='Price (USDT)',
+            xaxis_title='Date',
+            template='plotly_dark'
+        )
 
-def create_candlestick_chart(data, symbol):
-    """Create a candlestick chart with volume."""
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                       vertical_spacing=0.03, subplot_titles=(f'{symbol} Price', 'Volume'),
-                       row_width=[0.7, 0.3])
+        return fig
 
-    # Candlestick chart
-    fig.add_trace(go.Candlestick(x=data['timestamp'],
-                                open=data['open'],
-                                high=data['high'],
-                                low=data['low'],
-                                close=data['close'],
-                                name='OHLC'),
-                  row=1, col=1)
-
-    # Volume bar chart
-    fig.add_trace(go.Bar(x=data['timestamp'],
-                        y=data['volume'],
-                        name='Volume'),
-                  row=2, col=1)
-
-    fig.update_layout(
-        xaxis_rangeslider_visible=False,
-        height=800
-    )
-
-    return fig
-
-def main():
-    # Title and description
-    st.title("🚀 Crypto Sentiment Trader")
-    st.markdown("""
-    Real-time cryptocurrency trading dashboard combining technical analysis and sentiment data.
-    """)
-
-    # Sidebar
-    st.sidebar.title("Settings")
-    selected_symbol = st.sidebar.selectbox(
-        "Select Cryptocurrency",
-        CRYPTO_SYMBOLS
-    )
-    timeframe = st.sidebar.selectbox(
-        "Select Timeframe",
-        TECHNICAL_TIMEFRAMES
-    )
-
-    # Create columns for key metrics
-    col1, col2, col3 = st.columns(3)
-
-    # Current Price
-    with col1:
-        st.subheader("Current Price")
-        prices = fetch_data("market/prices")
-        if prices:
-            current_price = prices['prices'].get(f"{selected_symbol}USDT")
-            if current_price:
-                st.metric(
-                    label=f"{selected_symbol}/USDT",
-                    value=f"${current_price:,.2f}"
-                )
-            else:
-                st.error(f"No price data available for {selected_symbol}")
-
-    # Sentiment Analysis
-    with col2:
-        st.subheader("Sentiment Analysis")
-        sentiment = fetch_data(f"analysis/sentiment/{selected_symbol}")
-        if sentiment:
-            sentiment_score = sentiment['sentiment_score']
-            sentiment_color = 'green' if sentiment_score > 0 else 'red'
-            st.markdown(f"""
-            **Score:** <span style='color:{sentiment_color}'>{sentiment_score:.2f}</span>
-            """, unsafe_allow_html=True)
-            
-            # Display data source information
-            st.markdown("### Data Sources")
-            if sentiment.get('reddit_available', False):
-                st.markdown(f"**Reddit Posts:** {sentiment['reddit_posts_analyzed']}")
-            else:
-                st.warning("⚠️ Reddit data unavailable")
-            
-            st.markdown(f"**News Items:** {sentiment['news_items_analyzed']}")
-
-    # Trading Signals
-    with col3:
-        st.subheader("Trading Signals")
-        signals = fetch_data(f"trading/signals/{selected_symbol}")
+    def display_technical_indicators(self, data):
+        """Display technical indicators in a formatted way."""
+        signals = self.technical_analyzer.generate_signals(data)
+        
         if signals:
-            combined_signal = signals['combined_signal']
-            signal_color = {
-                'buy': 'green',
-                'sell': 'red',
-                'neutral': 'gray'
-            }[combined_signal]
-            st.markdown(f"""
-            **Signal:** <span style='color:{signal_color}'>{combined_signal.upper()}</span>  
-            **Confidence:** {signals['confidence']:.2%}
-            """, unsafe_allow_html=True)
+            cols = st.columns(4)
+            
+            # RSI
+            if signals['rsi']:
+                with cols[0]:
+                    st.metric(
+                        "RSI",
+                        f"{signals['rsi']['value']:.2f}",
+                        delta=signals['rsi']['signal']
+                    )
+            
+            # MACD
+            if signals['macd']:
+                with cols[1]:
+                    st.metric(
+                        "MACD",
+                        f"{signals['macd']['value']:.2f}",
+                        delta=signals['macd']['signal']
+                    )
+            
+            # Bollinger Bands
+            if signals['bb']:
+                with cols[2]:
+                    st.metric(
+                        "BB Position",
+                        f"{signals['bb']['value']['price']:.2f}",
+                        delta=signals['bb']['signal']
+                    )
+            
+            # Overall Signal
+            if signals['overall']:
+                with cols[3]:
+                    st.metric(
+                        "Signal Strength",
+                        signals['overall']['signal'].upper(),
+                        f"{signals['overall']['strength']:.2%}"
+                    )
 
-    # Price Chart
-    st.subheader("Price Chart")
-    historical_data = fetch_data(f"market/historical/{selected_symbol}USDT?interval={timeframe}")
-    if historical_data and historical_data.get('data'):
-        df = pd.DataFrame(historical_data['data'])
-        fig = create_candlestick_chart(df, f"{selected_symbol}/USDT")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.error("No historical data available")
-
-    # Technical Analysis
-    st.subheader("Technical Analysis")
-    technical = fetch_data(f"analysis/technical/{selected_symbol}USDT?interval={timeframe}")
-    if technical and technical.get('signals'):
-        col1, col2 = st.columns(2)
+    async def display_sentiment_analysis(self, symbol):
+        """Display sentiment analysis results."""
+        sentiment_data = await self.sentiment_analyzer.aggregate_sentiment(symbol)
         
-        with col1:
-            st.markdown("### Indicators")
-            indicators = technical['signals']
-            for indicator, data in indicators.items():
-                if indicator != 'overall':
-                    signal_color = {
-                        'buy': 'green',
-                        'sell': 'red',
-                        'neutral': 'gray'
-                    }[data['signal']]
-                    st.markdown(f"**{indicator.upper()}:** <span style='color:{signal_color}'>{data['signal'].upper()}</span>", unsafe_allow_html=True)
+        if sentiment_data:
+            st.subheader("Sentiment Analysis")
+            
+            # Display sentiment score with color coding
+            score = sentiment_data['sentiment_score']
+            color = 'green' if score > 0 else 'red' if score < 0 else 'gray'
+            st.markdown(f"**Sentiment Score:** <span style='color:{color}'>{score:.2f}</span>", 
+                       unsafe_allow_html=True)
+            
+            # Display analysis metrics
+            cols = st.columns(2)
+            with cols[0]:
+                st.metric("Reddit Posts Analyzed", sentiment_data['reddit_posts_analyzed'])
+            with cols[1]:
+                st.metric("News Items Analyzed", sentiment_data['news_items_analyzed'])
+
+    def run(self):
+        """Main dashboard interface."""
+        st.set_page_config(page_title="Crypto Trader Dashboard", layout="wide")
+        st.title("Crypto Trading Dashboard")
+
+        # Sidebar controls
+        st.sidebar.header("Settings")
+        selected_symbol = st.sidebar.selectbox("Select Cryptocurrency", CRYPTO_SYMBOLS)
+        selected_timeframe = st.sidebar.selectbox("Select Timeframe", TECHNICAL_TIMEFRAMES)
         
-        with col2:
-            st.markdown("### Overall Analysis")
-            overall = indicators['overall']
-            signal_color = {
-                'buy': 'green',
-                'sell': 'red',
-                'neutral': 'gray'
-            }[overall['signal']]
-            st.markdown(f"""
-            **Signal:** <span style='color:{signal_color}'>{overall['signal'].upper()}</span>  
-            **Strength:** {overall['strength']:.2%}
-            """, unsafe_allow_html=True)
-    else:
-        st.error("No technical analysis data available")
-
-    # Refresh button
-    if st.button("Refresh Data"):
-        st.experimental_rerun()
-
-    # Auto-refresh disclaimer
-    st.markdown("""
-    ---
-    *Data refreshes automatically every 5 minutes. Last update: {}*
-    """.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        symbol = f"{selected_symbol}USDT"
+        
+        try:
+            # Fetch market data
+            data = self.market_data.get_historical_klines(
+                symbol, 
+                selected_timeframe, 
+                lookback_days=30
+            )
+            
+            if not data.empty:
+                # Main price chart
+                st.plotly_chart(self.plot_price_chart(symbol, selected_timeframe, data), 
+                              use_container_width=True)
+                
+                # Technical indicators
+                st.subheader("Technical Analysis")
+                self.display_technical_indicators(data)
+                
+                # Sentiment analysis
+                asyncio.run(self.display_sentiment_analysis(selected_symbol))
+                
+                # Current market stats
+                st.subheader("Market Statistics")
+                stats = self.market_data.get_24h_stats(symbol)
+                if stats:
+                    cols = st.columns(4)
+                    cols[0].metric("24h Change", f"{stats['price_change_percent']}%")
+                    cols[1].metric("Volume", f"{stats['volume']:.2f}")
+                    cols[2].metric("Last Price", f"{stats['last_price']:.2f}")
+                    cols[3].metric("Weighted Avg", f"{stats['weighted_avg_price']:.2f}")
+                
+            else:
+                st.error("No data available for the selected symbol and timeframe.")
+                
+        except Exception as e:
+            st.error(f"Error loading dashboard: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    dashboard = Dashboard()
+    dashboard.run()
