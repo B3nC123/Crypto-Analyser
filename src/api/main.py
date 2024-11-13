@@ -89,7 +89,7 @@ async def get_sentiment_analysis(symbol: str):
         if symbol not in CRYPTO_SYMBOLS:
             raise HTTPException(status_code=400, detail="Invalid symbol")
         
-        sentiment = sentiment_analyzer.aggregate_sentiment(symbol)
+        sentiment = await sentiment_analyzer.aggregate_sentiment(symbol)
         if not sentiment:
             raise HTTPException(status_code=500, detail="Failed to analyze sentiment")
         
@@ -139,7 +139,7 @@ async def get_trading_signals(symbol: str):
             raise HTTPException(status_code=400, detail="Invalid symbol")
         
         # Get both technical and sentiment analysis
-        sentiment = sentiment_analyzer.aggregate_sentiment(symbol)
+        sentiment = await sentiment_analyzer.aggregate_sentiment(symbol)
         technical = await get_technical_analysis(f"{symbol}USDT", "1h")
         
         if not sentiment or not technical:

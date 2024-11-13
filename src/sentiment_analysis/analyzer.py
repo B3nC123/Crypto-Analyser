@@ -1,7 +1,9 @@
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import praw
+import asyncpraw
 import feedparser
 import logging
+import asyncio
+import aiohttp
 from datetime import datetime, timedelta
 from src.config import (
     REDDIT_CLIENT_ID,
@@ -17,17 +19,9 @@ logger = logging.getLogger(__name__)
 class SentimentAnalyzer:
     def __init__(self):
         self.analyzer = SentimentIntensityAnalyzer()
-        try:
-            self.reddit = praw.Reddit(
-                client_id=REDDIT_CLIENT_ID,
-                client_secret=REDDIT_CLIENT_SECRET,
-                user_agent=REDDIT_USER_AGENT
-            )
-            self.reddit_available = True
-        except Exception as e:
-            logger.warning(f"Failed to initialize Reddit client: {e}")
-            self.reddit_available = False
-
+        self.session = None
+        self.reddit_available = False
+        
         # Custom crypto-specific lexicon additions
         self.crypto_lexicon = {
             'hodl': 2.0,
@@ -37,7 +31,7 @@ class SentimentAnalyzer:
             'shill': -1.0,
             'bullish': 2.0,
             'bearish': -2.0,
-            'pump': 1.0,  # Neutral as it can be both positive and negative
+            'pump': 1.0,
             'dip': -0.5,
             'correction': -1.0,
             'accumulate': 1.0,
@@ -51,6 +45,11 @@ class SentimentAnalyzer:
     def _update_lexicon(self):
         """Update the sentiment analyzer's lexicon with crypto-specific terms."""
         self.analyzer.lexicon.update(self.crypto_lexicon)
+
+    async def _init_session(self):
+        """Initialize aiohttp session if not already initialized."""
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
 
     def analyze_text(self, text):
         """Analyze sentiment of a single text."""
@@ -66,34 +65,53 @@ class SentimentAnalyzer:
             logger.error(f"Error analyzing text: {e}")
             return None
 
-    def get_reddit_sentiment(self, subreddit_name, symbol, limit=100):
-        """Get sentiment from Reddit posts and comments."""
-        if not self.reddit_available:
-            logger.info(f"Reddit API not available, skipping Reddit sentiment for {symbol}")
-            return []
-
+    async def get_reddit_sentiment(self, subreddit_name, symbol, limit=100):
+        """Get sentiment from Reddit posts using public JSON API."""
+        await self._init_session()
+        posts = []
+        
         try:
-            subreddit = self.reddit.subreddit(subreddit_name)
-            posts = []
+            url = f"https://www.reddit.com/r/{subreddit_name}/search.json"
+            params = {
+                'q': symbol,
+                't': 'day',
+                'limit': limit,
+                'restrict_sr': 'on'
+            }
+            headers = {'User-Agent': REDDIT_USER_AGENT}
             
-            # Get posts from last 24 hours
-            for post in subreddit.search(symbol, time_filter='day', limit=limit):
-                sentiment = self.analyze_text(post.title + " " + post.selftext)
-                if sentiment:
-                    posts.append({
-                        'timestamp': datetime.fromtimestamp(post.created_utc),
-                        'title': post.title,
-                        'sentiment': sentiment['compound'],
-                        'score': post.score,
-                        'num_comments': post.num_comments
-                    })
+            async with self.session.get(url, params=params, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    if 'data' in data and 'children' in data['data']:
+                        for post in data['data']['children']:
+                            post_data = post['data']
+                            
+                            # Check if post mentions the symbol
+                            if symbol in post_data.get('title', '') or symbol in post_data.get('selftext', ''):
+                                text = post_data['title']
+                                if 'selftext' in post_data:
+                                    text += " " + post_data['selftext']
+                                    
+                                sentiment = self.analyze_text(text)
+                                if sentiment:
+                                    posts.append({
+                                        'timestamp': datetime.fromtimestamp(post_data['created_utc']),
+                                        'title': post_data['title'],
+                                        'sentiment': sentiment['compound'],
+                                        'score': post_data['score'],
+                                        'num_comments': post_data['num_comments']
+                                    })
+                else:
+                    logger.warning(f"Failed to fetch Reddit data: {response.status}")
             
             return posts
         except Exception as e:
             logger.error(f"Error fetching Reddit data: {e}")
             return []
 
-    def get_news_sentiment(self, rss_feeds):
+    def get_news_sentiment(self, rss_feeds, symbol):
         """Analyze sentiment from crypto news RSS feeds."""
         try:
             news_items = []
@@ -107,6 +125,11 @@ class SentimentAnalyzer:
                             if pub_date < datetime.now() - timedelta(hours=SENTIMENT_WINDOW):
                                 continue
                         
+                        # Only analyze entries that mention the specific symbol
+                        title_and_summary = (entry.title + " " + entry.summary).upper()
+                        if symbol not in title_and_summary:
+                            continue
+
                         sentiment = self.analyze_text(entry.title + " " + entry.summary)
                         if sentiment:
                             news_items.append({
@@ -124,21 +147,22 @@ class SentimentAnalyzer:
             logger.error(f"Error fetching news data: {e}")
             return []
 
-    def aggregate_sentiment(self, symbol):
+    async def aggregate_sentiment(self, symbol):
         """Aggregate sentiment from all sources for a specific symbol."""
         try:
             # Get Reddit sentiment from relevant subreddits
             reddit_data = []
-            if self.reddit_available:
-                for subreddit in ['cryptocurrency', f'{symbol.lower()}', 'cryptomarkets']:
-                    reddit_data.extend(self.get_reddit_sentiment(subreddit, symbol))
+            subreddits = ['cryptocurrency', f'{symbol.lower()}', 'cryptomarkets']
+            for subreddit in subreddits:
+                reddit_posts = await self.get_reddit_sentiment(subreddit, symbol)
+                reddit_data.extend(reddit_posts)
 
             # Get news sentiment
             crypto_news_feeds = [
                 'https://cointelegraph.com/rss',
                 'https://coindesk.com/arc/outboundfeeds/rss/'
             ]
-            news_data = self.get_news_sentiment(crypto_news_feeds)
+            news_data = self.get_news_sentiment(crypto_news_feeds, symbol)
 
             # Calculate weighted sentiment
             total_weight = 0
@@ -161,23 +185,29 @@ class SentimentAnalyzer:
             else:
                 final_sentiment = 0
 
+            # Close the session if it exists
+            if self.session:
+                await self.session.close()
+                self.session = None
+
             return {
                 'symbol': symbol,
                 'sentiment_score': final_sentiment,
                 'reddit_posts_analyzed': len(reddit_data),
                 'news_items_analyzed': len(news_data),
-                'reddit_available': self.reddit_available,
                 'timestamp': datetime.now()
             }
 
         except Exception as e:
             logger.error(f"Error aggregating sentiment for {symbol}: {e}")
+            if self.session:
+                await self.session.close()
+                self.session = None
             return {
                 'symbol': symbol,
                 'sentiment_score': 0,
                 'reddit_posts_analyzed': 0,
                 'news_items_analyzed': 0,
-                'reddit_available': self.reddit_available,
                 'timestamp': datetime.now(),
                 'error': str(e)
             }

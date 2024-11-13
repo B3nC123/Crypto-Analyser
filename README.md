@@ -6,9 +6,9 @@ A sophisticated cryptocurrency trading assistant that combines technical analysi
 
 - Real-time cryptocurrency price tracking via Binance API
 - Multi-source sentiment analysis:
-  - Reddit discussions (requires API credentials)
-  - News articles from major crypto news outlets
-  - Social media trends
+  - Reddit discussions (using public API)
+  - News articles from major crypto news outlets (CoinTelegraph, CoinDesk)
+  - Weighted sentiment scoring based on post engagement
 - Comprehensive technical analysis:
   - RSI (Relative Strength Index)
   - MACD (Moving Average Convergence Divergence)
@@ -26,7 +26,6 @@ A sophisticated cryptocurrency trading assistant that combines technical analysi
 - Python 3.8+
 - Git
 - Binance API credentials (for market data)
-- Reddit API credentials (for sentiment analysis)
 
 ## Installation
 
@@ -67,11 +66,6 @@ cp .env.example .env
 BINANCE_API_KEY=your_binance_api_key
 BINANCE_API_SECRET=your_binance_api_secret
 
-# Reddit API Configuration
-REDDIT_CLIENT_ID=your_reddit_client_id
-REDDIT_CLIENT_SECRET=your_reddit_client_secret
-REDDIT_USER_AGENT=crypto_sentiment_bot 1.0
-
 # Application Settings
 DEBUG=False
 LOG_LEVEL=INFO
@@ -108,6 +102,28 @@ This command starts both:
 - GET `/api/v1/analysis/sentiment/{symbol}` - Get sentiment analysis
 - GET `/api/v1/analysis/technical/{symbol}` - Get technical analysis
 - GET `/api/v1/trading/signals/{symbol}` - Get combined trading signals
+
+## Sentiment Analysis
+
+The system performs sentiment analysis using multiple data sources:
+
+1. Reddit Data:
+   - Fetches posts from cryptocurrency-related subreddits
+   - Uses Reddit's public JSON API
+   - Analyzes post titles and content
+   - Weights sentiment based on post scores and comment counts
+
+2. News Data:
+   - Aggregates news from major crypto news outlets
+   - Filters articles by relevance to specific cryptocurrencies
+   - Analyzes article titles and summaries
+   - Considers publication timing and source reliability
+
+3. Sentiment Scoring:
+   - Uses VADER sentiment analysis
+   - Enhanced with crypto-specific lexicon
+   - Weighted scoring based on source reliability and engagement
+   - Separate tracking for each cryptocurrency
 
 ## Project Structure
 
@@ -154,20 +170,20 @@ DEBUG=True python -m src.main
 
 ## Troubleshooting
 
-1. Reddit API 401 errors:
-- Verify your Reddit API credentials in .env
-- Ensure your Reddit application has the correct permissions
-- Check if your Reddit account is verified
+1. Sentiment Analysis:
+   - If sentiment scores seem incorrect, check the news feed URLs in the configuration
+   - Verify the cryptocurrency symbol matches exactly (e.g., "BTC" not "Bitcoin")
+   - Check if the sentiment window duration is appropriate for your needs
 
 2. Binance API issues:
-- Confirm your API keys are valid
-- Check if you have the necessary API permissions
-- Verify your IP is not restricted
+   - Confirm your API keys are valid
+   - Check if you have the necessary API permissions
+   - Verify your IP is not restricted
 
 3. Dashboard not loading:
-- Ensure both backend and frontend are running
-- Check if ports 8080 and 8501 are available
-- Look for errors in the application logs
+   - Ensure both backend and frontend are running
+   - Check if ports 8080 and 8501 are available
+   - Look for errors in the application logs
 
 ## Contributing
 
